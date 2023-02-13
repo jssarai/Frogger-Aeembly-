@@ -1,0 +1,1648 @@
+;Set your delay to one of the leftmost settings for the intended experience
+;ENJOY
+; We are doing Freeway
+; Main
+	LDS# $E00
+	; Set up timer ISR
+	LDA#	TIMER_ISR
+	STA	TIMER_INT_VEC
+	; Reset player position
+START_LEVEL:	JSR	RST_PL_POS
+	; Print top row
+	PSH	SCORE
+	JSR	UPDATE_TOP
+	ADS#	1
+	; Reset timer
+	LDA	TIMER_VAL
+	OUTW	TIMER_RELOAD_VALUE_REG
+	; Start timer
+	LDA#	TIMER_LOAD_VALUE_AND_START_CONSTANT
+	OUTB	TIMER_CONTROL_REG
+	; Print bottom row
+	PSH	LEVEL
+	PSH	LIVES
+	JSR	UPDATE_BOTTOM
+	ADS#	2
+	JSR START_CARS ;Places all cars randomly
+	JSR SET_SPEEDS
+	LDA	PLAYER_ROW
+	STA	HIGHEST_PLAYER_ROW
+	LDX# 0
+LOOP:	SIE
+	PSH	SCORE ; Print top row
+	JSR	UPDATE_TOP
+	ADS#	1
+	JSR MOVE_CARS
+	LDA LIVES
+	CMA# 0
+	JLE RESET_GAME ; reset the game if we are out of lives
+	INB	KBD_CNTR
+	JGE	NO_MOVE
+	JMP	KBD_CHK
+MOVE:	LDA LIVES
+	CMA# 0
+	JLE RESET_GAME
+	LDA	PLAYER_ROW ; check to see if the player is at the finish row
+	CMA#	FINISH_ROW_CONSTANT ; finish
+	JEQ	NEXT_LEVEL_MAIN
+NO_MOVE:	LDA	LIVES
+	CMA#	0
+	JLE	RESET_GAME	; reset the game if we are out of lives
+	INC CYCLE_COUNT
+	AOC# 1000
+	JEQ RESET_CC	;Reset Cycle count
+	JMP LOOP	
+RESET_CC:	LDA# 1
+	STA CYCLE_COUNT
+	TAX		;Reset XR as well
+	JMP LOOP
+NEXT_LEVEL_MAIN: JSR NEXT_LEVEL ; go to the next level when we reach the finish row
+	JMP	START_LEVEL
+
+; Game Data Constants
+	.equ	STARTING_LEVEL_CONSTANT, 0
+	.equ	STARTING_LIVES_CONSTANT, 5
+	.equ	STARTING_SCORE_CONSTANT, 0
+	.equ MAX_LEVEL_CONSTANT, 20
+	.equ STARTING_MINES_CONSTANT, 5
+
+; Game Data
+LEVEL:	.word	STARTING_LEVEL_CONSTANT
+LIVES:	.word	STARTING_LIVES_CONSTANT
+SCORE:	.word	STARTING_SCORE_CONSTANT
+MINES:	.word	STARTING_MINES_CONSTANT
+
+; Lane Starting Speeds Constants
+	.equ BASE_SPEED_MOD, 201
+	.equ SPEED_VAR, 10
+	.equ	DELTA_SPEED, 10 ; The change in speed per level as a multiplier (treat this like a percentage)
+
+; Lane Speeds
+SPEED_MOD:	.word BASE_SPEED_MOD
+LANE_SPEED_ARRAY: .BLKW 12, 0
+CYCLE_COUNT:	.word 1
+
+; Screen Constants
+	.equ	SCREEN_WIDTH_CONSTANT, 38
+	.equ	SCREEN_HEIGHT_CONSTANT, 14
+	.equ	BOTTOM_ROW_CONSTANT, 13 ; Corresponds to the bottom row
+	.equ	STARTING_ROW_CONSTANT, 12 ; Corresponds to the starting row
+	.equ	LANE_1_CONSTANT, 11 ; Corresponds to LANE
+	.equ	LANE_2_CONSTANT, 10 ; Corresponds to LANE
+	.equ	LANE_3_CONSTANT, 9 ; Corresponds to LANE
+	.equ	LANE_4_CONSTANT, 8 ; Corresponds to LANE
+	.equ	CENTER_DIVIDE_CONSTANT, 7 ; Corresponds to CENTER_DIVIDE
+	.equ	LANE_5_CONSTANT, 6 ; Corresponds to LANE
+	.equ	LANE_6_CONSTANT, 5 ; Corresponds to LANE
+	.equ	LANE_7_CONSTANT, 4 ; Corresponds to LANE
+	.equ	LANE_8_CONSTANT, 3 ; Corresponds to LANE
+	.equ	LANE_9_CONSTANT, 2 ; Corresponds to LANE
+	.equ	FINISH_ROW_CONSTANT, 1 ; Corresponds to index 0 of FINISH_ROW
+	.equ	TOP_ROW_CONSTANT, 0 ; Corresponds to index 0 of TOP_ROW
+	
+
+; Player Starting Position Constants
+	.equ	PLAYER_START_ROW_CONSTANT, STARTING_ROW_CONSTANT
+	.equ	PLAYER_START_COL_CONSTANT, SCREEN_WIDTH_CONSTANT / 2
+
+; Player Location
+PLAYER_ROW:	.word	PLAYER_START_ROW_CONSTANT
+PLAYER_COL:	.word	PLAYER_START_COL_CONSTANT
+
+; Player Char Representation On Screen Constant
+	.equ	PLAYER_CHAR_CONSTANT, $B1
+; Extended ASCII character representations of game elaments
+	.equ MINE_CHAR, $95 ;Char representation of mine
+	.equ EXPLOSION_CHAR1, $A4 ;Char representation of explosion part 1
+	.equ FREE_LIFE_CHAR, $B0
+	.equ EXPLOSION_CHAR2, $D7 ;Char representation of explosion part 2
+	.equ PLAYER_EXPLODED_CHAR, $D7 ;char representation of player character getting exploded
+
+HIGHEST_PLAYER_ROW:	.word 0
+
+; Car Constants
+	.equ	RC_CHAR, $BB ; Char representation of right cars
+	.equ  LC_CHAR, $AB ; Char representation of left cars
+	.equ MIN_CARS, 2   ; Minimum cars per lane(double/triple cars count double/triple)
+	.equ MAX_CARS, 4-MIN_CARS	 ; Minimum cars per lane(double/triple cars can count double/triple)
+	.equ MAX_POS, SCREEN_WIDTH_CONSTANT - 1 ; Max horizontal index of a car
+	.equ DOUBLE_CAR_MODIFIER, 1 ;Changes the chance of larger cars lower the chance the better (1/(x+1))
+
+;CRT I/O Constants
+	.equ CRT_VBUF, $100
+
+
+; Keyboard IO Constants
+	.equ	KBD_CNTR, $000
+	.equ	KBD_DATA, $001
+	.equ	KBD_INT_VEC, $FF8
+	.equ	ENABLE_KBD_INT, $80 ;Left bit of last 8 bits should be set
+
+; Screen IO
+	.equ	SCREEN_VIDEO_BUFFER, $100
+	.equ	SCREEN_CURSOR_X, $314
+	.equ	SCREEN_CURSOR_Y, $315
+
+; Timer
+	.equ	TIMER_CONTROL_REG, $30
+	.equ	TIMER_RELOAD_VALUE_REG, $31
+	.equ	TIMER_COUNTER_REG, $34
+	.equ	TIMER_LOAD_VALUE_AND_START_CONSTANT, $D0
+TIMER_VAL:	.word	$FFFFFF
+
+; Tape IO
+	.equ	TAPE_CONTROL_REG, $20
+	.equ	TAPE_STATUS_REG, $20
+	.equ	TAPE_LEN, $21
+	.equ	TAPE_ADDRESS, $22
+	.equ	TAPE_MOUNTED_BIT, $20
+	.equ	TAPE_READ_BITS, $10
+	.equ	TAPE_WRITE_BITS, $20
+	.equ	TAPE_EOT_BIT, $08
+
+	.equ	TIMER_INT_VEC, $FFB
+EMPTY_EXPLOSION_TIME:	.word 10000
+CAR_EXPLOSION_TIME:	.word 20000
+PLAYER_EXPLOSION_TIME:	.word 30000
+; MINI OS Constants
+	.equ	TO_STR, $E02 ; PROCEDURE TO_STR(IN_VAL:INTEGER, MAX_LEN: INTEGER, var OUT_STR:CHAR_STRING, var ACTUAL_LEN: INTEGER)
+
+; Timer Interrupts
+TIMER_ISR:	PSHA ; Lose a life when the timer hits zero
+	DEC	LIVES
+	PSH	LEVEL
+	PSH	LIVES
+	JSR	UPDATE_BOTTOM
+	ADS#	2
+	LDA#	TIMER_LOAD_VALUE_AND_START_CONSTANT ; reset and start the timer
+	OUTB	TIMER_CONTROL_REG
+	PSH	SCORE ; Print top row
+	JSR	UPDATE_TOP
+	ADS#	1
+	POPA
+	IRTN
+
+; Check the keyboard
+; k, j, i, m for movement
+; Atari extension
+; r resets the game
+; a decreases the level
+; z increases the level
+; o turns off machine
+; s starts game (does not reset game)
+KBD_CHK:	; Read the character pressed to lower 8 bits of ACC
+	INB	KBD_DATA
+	; Make comparisons
+	CMA#	'i'
+	JEQ	KBD_CHK_I	
+	CMA#	'j'
+	JEQ	KBD_CHK_J
+	CMA#	'k'
+	JEQ	KBD_CHK_K
+	CMA#	'm'
+	JEQ	KBD_CHK_M
+	CMA# 'u'
+	JEQ KBD_CHK_U
+	CMA#	'a'
+	JEQ	KBD_CHK_A
+	CMA#	'z'
+	JEQ	KBD_CHK_Z
+	CMA#	'r'
+	JEQ	RESET_GAME
+	CMA#	'o'
+	JEQ	TURN_OFF_SCREEN
+	; No action to take, so we are done
+	JMP	KBD_CHK_DONE
+	; Actions when a char is pressed
+KBD_CHK_I:	JSR	MOVE_UP
+	JMP	KBD_CHK_DONE
+KBD_CHK_J:	JSR	MOVE_LEFT
+	JMP	KBD_CHK_DONE
+KBD_CHK_K:	JSR	MOVE_RIGHT
+	JMP	KBD_CHK_DONE
+KBD_CHK_M:	JSR	MOVE_DOWN
+	JMP	KBD_CHK_DONE
+KBD_CHK_U:	JSR PLACE_MINE
+	JMP KBD_CHK_DONE
+KBD_CHK_A:	JSR	DEC_LEVEL
+	JMP	KBD_CHK_DONE
+KBD_CHK_Z:	JSR	INC_LEVEL
+	JMP	KBD_CHK_DONE
+	; Load original registers
+KBD_CHK_DONE: JMP MOVE
+
+; Move the player right
+MOVE_RIGHT:	PSHA
+	LDA	PLAYER_COL
+	ADA#	1
+	PSHA	; SET_PL_POS_NEW_COL
+	PSH	PLAYER_ROW ; SET_PL_POS_NEW_ROW
+	JSR	SET_PL_POS
+	ADS#	2
+	POPA
+	RTN
+
+; Move the player down
+MOVE_DOWN:	PSHA
+	PSH	PLAYER_COL ; SET_PL_POS_NEW_COL
+	LDA	PLAYER_ROW
+	ADA#	1
+	PSHA	; SET_PL_POS_NEW_ROW
+	JSR	SET_PL_POS
+	ADS#	2
+	POPA
+	RTN
+
+; Move the player left
+MOVE_LEFT:	PSHA
+	LDA	PLAYER_COL
+	SBA#	1
+	PSHA	; SET_PL_POS_NEW_COL
+	PSH	PLAYER_ROW ; SET_PL_POS_NEW_ROW
+	JSR	SET_PL_POS
+	ADS#	2
+	POPA
+	RTN
+
+; Move the player up
+MOVE_UP:	PSHA
+	PSH	PLAYER_COL ; SET_PL_POS_NEW_COL
+	LDA	PLAYER_ROW
+	SBA#	1
+	PSHA	; SET_PL_POS_NEW_ROW
+	JSR	SET_PL_POS
+	ADS#	2
+	; Update score based on acheiving new rows
+	LDA	HIGHEST_PLAYER_ROW
+	CMA	PLAYER_ROW
+	JLE	MOVE_UP_DN
+	LDA	PLAYER_ROW
+	STA	HIGHEST_PLAYER_ROW
+	INC	SCORE
+	PSH	SCORE
+	JSR	UPDATE_TOP
+	ADS#	1
+MOVE_UP_DN:	POPA
+	RTN
+
+; Sets the player position as needed
+; If position is out of bounds, then it does nothing
+	.equ	SET_PL_POS_NEW_COL, 3
+	.equ	SET_PL_POS_NEW_ROW, 2
+SET_PL_POS:	BGN#	0
+	PSHA
+	PSHX
+	; Check bounds
+	LDA  !	SET_PL_POS_NEW_COL
+	CMA#	0
+	JLT	SET_PL_POS_DN
+	CMA#	SCREEN_WIDTH_CONSTANT
+	JGE	SET_PL_POS_DN
+	LDA  !	SET_PL_POS_NEW_ROW
+	CMA#	TOP_ROW_CONSTANT
+	JLE	SET_PL_POS_DN
+	CMA#	BOTTOM_ROW_CONSTANT
+	JGE	SET_PL_POS_DN
+	; In bounds, so we can update player
+	; Delete the old position
+	PSH#	' '
+	PSH	PLAYER_ROW
+	PSH	PLAYER_COL
+	JSR	PRINT_CHAR
+	ADS#	3
+	;Check if new position will hit a car
+	PSH ! SET_PL_POS_NEW_ROW
+	PSH ! SET_PL_POS_NEW_COL
+	JSR CHECK_HIT
+	ADS# 2
+	CMA# 1 	;CHECK_HIT puts 1 into the accumulator if there was a hit
+	JEQ SET_PL_POS_DN	;If hit a car or mine skip outputing character and updating position
+	; Update the new position on screen
+	PSH#	PLAYER_CHAR_CONSTANT
+	PSH  !	SET_PL_POS_NEW_ROW
+	PSH  !	SET_PL_POS_NEW_COL
+	JSR	PRINT_CHAR
+	ADS#	3
+	; Update the new position variables
+	LDA  !	SET_PL_POS_NEW_ROW
+	STA	PLAYER_ROW
+	LDA  !	SET_PL_POS_NEW_COL
+	STA	PLAYER_COL
+SET_PL_POS_DN:	POPX
+	POPA
+	FIN#	0
+	; Return
+	RTN
+
+
+PLACE_MINE:	BGN# 0
+	LDA MINES
+	CMA# 0
+	JLE NO_MINES
+	LDA PLAYER_ROW
+	SBA# 1
+	MUL# SCREEN_WIDTH_CONSTANT
+	TAX
+	ADX PLAYER_COL
+	LDA# MINE_CHAR
+	OUTB+ CRT_VBUF
+	DEC MINES
+NO_MINES:	FIN# 0
+	RTN
+	
+;Checks if the location player is moving to has a car
+	.equ check_row, 3
+	.equ check_col, 2
+CHECK_HIT:	BGN# 0	;FP for relative referencing of parametrs
+	PSHX		;Save caller registers
+	LDA ! check_row	;Get row
+	MUL# SCREEN_WIDTH_CONSTANT ;Multiply to get the index for the start of the row
+	TAX		;Transfer to XR
+	ADX ! check_col	;Add col to get the index of where player is going
+	INB+ SCREEN_VIDEO_BUFFER	;Get the char already at that positon
+	CMA# LC_CHAR	;Check if hitting left car
+	JEQ HIT_CAR	;If hit then handle it
+	CMA# RC_CHAR	;Check if hitting a right car
+	JEQ HIT_CAR	;If hit then handle it
+	CMA# MINE_CHAR	;If hit mine then set that off
+	JEQ HIT_MINE	;If hit mine then set that off
+	CMA# FREE_LIFE_CHAR
+	JEQ EXTRA_LIFE
+	JMP NO_HIT
+HIT_CAR:	JSR GOT_HIT	;If hit trigger got hit function
+	LDA# 1	;Return 1 into the ACC so caller knows it got hit
+	JMP NO_HIT	;Skip mine explosion
+HIT_MINE:	JSR EXPLODE_PLAYER
+	LDA# 1
+	JMP NO_HIT
+EXTRA_LIFE:	INC LIVES
+	PSH	LEVEL
+	PSH	LIVES
+	JSR	UPDATE_BOTTOM
+	ADS#	2
+NO_HIT:	POPX		;Return caller registers
+	FIN# 0	;Return function
+	RTN
+	
+	
+WAIT:	.equ wait_time, 2
+	BGN# 0
+	PSHA
+	LDA# 0
+KEEP_WAITING:	ADA# 1
+	CMA ! wait_time
+	JLT KEEP_WAITING
+	POPA
+	FIN# 0
+	RTN
+	
+
+
+	
+	
+; Reset player position to starting position
+RST_PL_POS:	PSH#	PLAYER_START_COL_CONSTANT
+	PSH#	PLAYER_START_ROW_CONSTANT
+	JSR	SET_PL_POS
+	ADS#	2
+	RTN
+
+; Update Information Displayed On Screen
+SCORE_STR:	.char	'Score: ', SCORE_STR_LEN_CONSTANT ; For displaying the score
+LEVEL_STR:	.char	'Level: ', LEVEL_STR_LEN_CONSTANT ; For displaying the level
+LIVES_STR:	.char	'Lives: ', LIVES_STR_LEN_CONSTANT ; For displaying the lives
+TIME_STR:		.char	'Time: ', TIME_STR_LEN_CONSTANT ; For displaying time remaining
+SEPERATOR_STR:	.char	'  ', SEPERATOR_STR_LEN_CONSTANT ; For displaying , between different things
+
+; PROCEDURE UPDATE_TOP(SCORE:INTEGER)
+	.equ	UPDATE_TOP_SCORE, 3
+	.equ	UPDATE_TOP_XR_INC, 1
+UPDATE_TOP:	PSH#	0 ; Local vars
+	; Begin
+	BGN#	0
+	; Store originals
+	PSHA
+	PSHX
+	; Let index register be the next col
+	LDX#	0
+	; Print Score label
+	PSH#	SCORE_STR_LEN_CONSTANT ; STR_LEN
+	PSH#	SCORE_STR ; var STR
+	PSH#	TOP_ROW_CONSTANT ; ROW
+	PSHX	; COL
+	JSR	PRINT
+	ADS#	4
+	; Add XR to represent new col
+	ADX#	SCORE_STR_LEN_CONSTANT
+	; Print Score
+	PSH  !	UPDATE_TOP_SCORE; NUM
+	PSH#	TOP_ROW_CONSTANT ; ROW
+	PSHX	; COL
+	PSH# !	UPDATE_TOP_XR_INC ; var PRINT_NUM_ACT_LEN
+	JSR	PRINT_NUM
+	ADS#	4
+	; Add XR to represent new col
+	ADX  !	UPDATE_TOP_XR_INC
+	; Print '/' seperator
+	PSH#	'/'
+	PSH#	TOP_ROW_CONSTANT ; ROW
+	PSHX	; COL
+	JSR		PRINT_CHAR
+	ADS#	3
+	; Add XR to represent new col
+	ADX#	1
+	; Print max high score
+	PSH		MAX_HIGH_SCORE ; NUM
+	PSH#	TOP_ROW_CONSTANT ; ROW
+	PSHX	; COL
+	PSH# !	UPDATE_TOP_XR_INC ; var PRINT_NUM_ACT_LEN
+	JSR	PRINT_NUM
+	ADS#	4
+	; Add XR to represent new col
+	ADX  !	UPDATE_TOP_XR_INC
+	; Print Seperator
+	PSH#	SEPERATOR_STR_LEN_CONSTANT ; STR_LEN
+	PSH#	SEPERATOR_STR ; var STR
+	PSH#	TOP_ROW_CONSTANT ; ROW
+	PSHX	; COL
+	JSR	PRINT
+	ADS#	4
+	; Add XR to represent new col
+	ADX#	SEPERATOR_STR_LEN_CONSTANT
+	; Print Time Remaining Label
+	PSH#	TIME_STR_LEN_CONSTANT ; STR_LEN
+	PSH#	TIME_STR ; var STR
+	PSH#	TOP_ROW_CONSTANT ; ROW
+	PSHX	; COL
+	JSR	PRINT
+	ADS#	4
+	; Add XR to represent new col
+	ADX#	TIME_STR_LEN_CONSTANT
+	; Print the actual number of time left to the screen
+	INB		TIMER_COUNTER_REG
+	PSHA	; NUM
+	PSH#	TOP_ROW_CONSTANT ; ROW
+	PSHX	; COL
+	PSH# !	UPDATE_TOP_XR_INC ; var PRINT_NUM_ACT_LEN
+	JSR		PRINT_NUM
+	ADS#	4
+	; Add XR to represent new col
+	ADX  !	UPDATE_TOP_XR_INC
+	; Print Seperator
+	PSH#	SEPERATOR_STR_LEN_CONSTANT ; STR_LEN
+	PSH#	SEPERATOR_STR ; var STR
+	PSH#	TOP_ROW_CONSTANT ; ROW
+	PSHX	; COL
+	JSR	PRINT
+	ADS#	4
+	; Add XR to represent new col
+	ADX#	SEPERATOR_STR_LEN_CONSTANT
+	; Load originals
+	POPX
+	POPA
+	; Done
+	FIN#	0
+	; Delete local vars
+	ADS#	1
+	; Return
+	RTN
+
+; PROCDDURE UPDATE_BOTTOM(LEVEL:INTEGER, LIVES:INTEGER)
+	.equ	UPDATE_BOTTOM_LEVEL, 4
+	.equ	UPDATE_BOTTOM_LIVES, 3
+	.equ	UPDATE_BOTTOM_XR_INC, 1
+UPDATE_BOTTOM:	PSH#	0 ; Create local vars
+	; Begin
+	BGN#	0
+	; Store originals
+	PSHA
+	PSHX
+	; Let index register be the next col
+	LDX#	0
+	; Print Level label
+	PSH#	LEVEL_STR_LEN_CONSTANT ; STR_LEN
+	PSH#	LEVEL_STR ; var STR
+	PSH#	BOTTOM_ROW_CONSTANT ; ROW
+	PSHX	; COL
+	JSR	PRINT
+	ADS#	4
+	; Add XR to represent new col
+	ADX#	LEVEL_STR_LEN_CONSTANT
+	; Print Level
+	PSH  !	UPDATE_BOTTOM_LEVEL ; NUM
+	PSH#	BOTTOM_ROW_CONSTANT ; ROW
+	PSHX	; COL
+	PSH# !	UPDATE_BOTTOM_XR_INC ; var PRINT_NUM_ACT_LEN
+	JSR	PRINT_NUM
+	ADS#	4
+	; Add XR to represent new col
+	ADX  !	UPDATE_BOTTOM_XR_INC
+	; Print Seperator
+	PSH#	SEPERATOR_STR_LEN_CONSTANT ; STR_LEN
+	PSH#	SEPERATOR_STR ; var STR
+	PSH#	BOTTOM_ROW_CONSTANT ; ROW
+	PSHX	; COL
+	JSR	PRINT
+	ADS#	4
+	; Add XR to represent new col
+	ADX#	SEPERATOR_STR_LEN_CONSTANT
+	; Print Lives label
+	PSH#	LIVES_STR_LEN_CONSTANT ; STR_LEN
+	PSH#	LIVES_STR ; var STR
+	PSH#	BOTTOM_ROW_CONSTANT ; ROW
+	PSHX	; COL
+	JSR	PRINT
+	ADS#	4
+	; Add XR to represent new col
+	ADX#	LIVES_STR_LEN_CONSTANT
+	; Print Lives
+	PSH  !	UPDATE_BOTTOM_LIVES ; NUM
+	PSH#	BOTTOM_ROW_CONSTANT ; ROW
+	PSHX	; COL
+	PSH# !	UPDATE_BOTTOM_XR_INC ; var PRINT_NUM_ACT_LEN
+	JSR	PRINT_NUM
+	ADS#	4
+	; Add XR to represent new col
+	ADX  !	UPDATE_BOTTOM_XR_INC
+	; Remove off by 1 err
+	PSH#	 ' '
+	PSH#	BOTTOM_ROW_CONSTANT
+	PSHX
+	JSR	PRINT_CHAR
+	ADS#	3
+	; Load originals
+	POPX
+	POPA
+	; Done
+	FIN#	0
+	; Delete local vars
+	ADS#	1
+	; Return
+	RTN
+
+; Game Controls
+; PROCEDURE MOVE_UP()
+; PROCEDURE MOVE_LEFT()
+; PROCEDURE MOVE_RIGHT()
+; PROCEDURE MOVE_DOWN()
+
+; Print String to screen at row, col
+; PROCEDURE PRINT(STR_LEN:INTEGER, var STR:CHAR_STRING, ROW:INTEGER, COL:INTEGER)
+	.equ	PRINT_STR_LEN, 6
+	.equ	PRINT_STR_VAR, 5
+	.equ	PRINT_ROW, 4
+	.equ	PRINT_COL, 3
+	.equ	PRINT_COL_X, 1 ; Local var
+PRINT:	PSH#	0 ; Create local vars
+	; Begin
+	BGN#	0
+	; Store originals
+	PSHA
+	PSHX
+	; Iniitialize local variable to start at index of beginning col
+	LDA  !	PRINT_COL
+	STA  !	PRINT_COL_X
+	; Load XR with the starting index of the string
+	LDX#	0
+	; Print each character individually
+PRINT_LOOP:	LDC* !	PRINT_STR_VAR
+	PSHA	; CH
+	PSH  !	PRINT_ROW ; ROW
+	PSH  !	PRINT_COL_X ; COL
+	JSR	PRINT_CHAR
+	ADS#	3
+	; Increment both Index Register and the local variable that stores current index of column
+	; Continue the loop if needed
+	INC  !	PRINT_COL_X
+	AOC  !	PRINT_STR_LEN
+	JLT	PRINT_LOOP
+	; Restore originals
+	POPX
+	POPA
+	; Done
+	FIN#	0
+	; Delete local vars
+	ADS#	1
+	; Return
+	RTN
+
+; Print Number to screen at row, col
+; PROCEDURE PRINT_NUM(NUM:INTEGER, ROW:INTEGER, COL:INTEGER, var PRINT_NUM_ACT_LEN:INTEGER)
+	.equ	PRINT_NUM_NUM, 8
+	.equ	PRINT_NUM_ROW, 7
+	.equ	PRINT_NUM_COL, 6
+	.equ	PRINT_NUM_ACT_LEN_VAR, 5
+	.equ	PRINT_NUM_STR, 1 ; local var, max len = PRINT_NUM_MAX_LEN
+	.equ	PRINT_NUM_MAX_LEN_CONSTANT, 9 ; constant for this procedure
+PRINT_NUM:	PSH#	0 ; Create local vars
+	PSH#	0
+	PSH#	0
+	; Start
+	BGN#	0
+	; Store orignals
+	PSHA
+	PSHX
+	; Convert to string
+	PSH  !	PRINT_NUM_NUM ; IN_VAL
+	PSH#	PRINT_NUM_MAX_LEN_CONSTANT ; MAX_LEN
+	PSH# !	PRINT_NUM_STR ; var OUT_STR
+	PSH  !	PRINT_NUM_ACT_LEN_VAR ; var ACT_LEN
+	JSR	TO_STR
+	ADS#	4
+	; Print string
+	PSH* !	PRINT_NUM_ACT_LEN_VAR ; STR_LEN
+	PSH# !	PRINT_NUM_STR ; var OUT_STR
+	PSH  !	PRINT_NUM_ROW ; ROW
+	PSH  !	PRINT_NUM_COL ; COL
+	JSR	PRINT
+	ADS#	4
+	; Restore orignals
+	POPX
+	POPA
+	; Done
+	FIN#	0
+	; Delete local vars
+	ADS#	3
+	; Return
+	RTN
+
+; Print Char to screen at row, col
+; PROCEDURE PRINT_CHAR(CH:CHAR, ROW:INTEGER, COL:INTEGER)
+	.equ	PRINT_CHAR_CH, 4
+	.equ	PRINT_CHAR_ROW, 3
+	.equ	PRINT_CHAR_COL, 2
+PRINT_CHAR:	BGN#	0
+	; Store originals	
+	PSHA
+	PSHX
+	; Load XR with the correct index for Screen IO (changes ACC)
+	LDA  !	PRINT_CHAR_ROW
+	MUL#	SCREEN_WIDTH_CONSTANT
+	TAX
+	ADX  !	PRINT_CHAR_COL
+	; Load the ACC with the character
+	LDA  !	PRINT_CHAR_CH
+	; Output it to the correct IO port
+	OUTB+	SCREEN_VIDEO_BUFFER
+	; Restore originals
+	POPX
+	POPA
+	; Done
+	FIN#	0
+	RTN
+
+
+
+
+
+
+
+;Function that places cars randomly in every lane according to starting parameters
+START_CARS:	BGN# 0
+
+	PSHA	;Save caller registers
+	PSHX
+
+	PSH# LANE_1_CONSTANT	;Lane parameter
+	JSR PLACE_CARS	;Place cars
+	ADS# 1		;Increment stack
+
+	PSH# LANE_2_CONSTANT	;Lane parameter
+	JSR PLACE_CARS	;Place cars
+	ADS# 1		;Increment stack
+
+	PSH# LANE_3_CONSTANT	;Lane parameter
+	JSR PLACE_CARS	;Place cars
+	ADS# 1		;Increment stack
+
+	PSH# LANE_4_CONSTANT	;Lane parameter
+	JSR PLACE_CARS	;Place cars
+	ADS# 1		;Increment stack
+
+	PSH# LANE_5_CONSTANT	;Lane parameter
+	JSR PLACE_CARS	;Place cars
+	ADS# 1		;Increment stack
+
+	PSH# LANE_6_CONSTANT	;Lane parameter
+	JSR PLACE_CARS	;Place cars
+	ADS# 1		;Increment stack
+
+	PSH# LANE_7_CONSTANT	;Lane parameter
+	JSR PLACE_CARS	;Place cars
+	ADS# 1		;Increment stack
+
+	PSH# LANE_8_CONSTANT	;Lane parameter
+	JSR PLACE_CARS	;Place cars
+	ADS# 1		;Increment stack
+
+	PSH# LANE_9_CONSTANT	;Lane parameter
+	JSR PLACE_CARS	;Place cars
+	ADS# 1		;Increment stack
+	
+
+	;Place extra lives randomly
+	PSH# 2
+	JSR RANDOM
+	ADS# 1
+	CMA# 0
+	JEQ NO_FL
+	CMA# 1 
+	JEQ ONE_FL
+TWO_FL:	LDA# CENTER_DIVIDE_CONSTANT
+	MUL# SCREEN_WIDTH_CONSTANT
+	TAX
+	ADX# 9
+	LDA# FREE_LIFE_CHAR
+	OUTB+ CRT_VBUF
+ONE_FL:	LDA# CENTER_DIVIDE_CONSTANT
+	MUL# SCREEN_WIDTH_CONSTANT
+	TAX
+	ADX# 27
+	LDA# FREE_LIFE_CHAR
+	OUTB+ CRT_VBUF
+	;Return caller registers
+NO_FL:	POPX
+	POPA
+	FIN# 0
+	RTN
+	
+
+
+	
+
+
+
+
+
+
+
+
+
+
+
+;Radnomly places cars in a line, all the same car type
+PLACE_CARS:	.equ start_lane, 2
+	BGN# 0
+	PSHX	;Save caller registers
+	PSHA
+	PSH# MAX_CARS	;Max random number will be added to min later
+	JSR RANDOM	;Call random - result in ACC
+	ADS# 1		;Incrememtn SP
+	ADA# MIN_CARS	;Adding to min cars means that even if random function resulted in 0 still have min
+	STA NUM_CARS	;Store variable
+	PSH# 1		;Randomize left or right lane(0 == right, 1 == left)
+	JSR RANDOM	;Call random - result in ACC
+	ADS# 1		;Increment SP
+	CMA# 0		;If 0 then right lane
+	LDX# 0		;Set XR
+	JEQ R_ADD_CAR	;If random value 0 then start process of adding right cars, else start adding left cars
+L_ADD_CAR:	PSHX		;Save XR to compare with number of cars placed
+	LDA ! start_lane	;ACC = start lane parameter
+	LDX ! start_lane	;XR = start lane parameter
+	MUL# SCREEN_WIDTH_CONSTANT	;Multiplying by WIDTH gives index to first elament in that row
+	STA+	LANE_ARRAY	;Store this starting position into LANE_ARRAY to help move function later
+	PSHA		;Save the starting index
+	PSH# MAX_POS	;Randomize horizontal index 0-37
+	JSR RANDOM	;Call random - result in ACC
+	ADS# 1		;Incrememnt SP
+	STA RANDOM_POS	;Store random position result to add to starting position
+	POPA		;Retrieve back the starting index
+	ADA RANDOM_POS	;Add to random position to get full index
+	TAX		;Transfer calculated index into XR
+	LDA# LC_CHAR	;Load left char character to OUTB to CRT
+	OUTB+ CRT_VBUF	;Place left char character into index
+	PSH# DOUBLE_CAR_MODIFIER	;Randomize chance of a double car, with max o
+	JSR RANDOM	;Calll random function - result in ACC
+	ADS# 1		;Increment SP
+	CMA# 1		;If 1 then double car will be created
+	JEQ L_DOUBLE	;If 1 then double car will be created
+	POPX		;Return the number of cars placed
+	AOC NUM_CARS	;Increment cars placed
+	JEQ START_CARS_RTN	;If all cars have been placed return
+	JMP L_ADD_CAR	;Place next car
+L_DOUBLE:	LDA RANDOM_POS	;Check if horizontal position at the star tof the lane
+	CMA# 0		;If horizontal position is already at the start then can't place a double before it
+	JEQ L_BACK	;Skip adding the double
+	LDA# LC_CHAR	;Load into ACC to OUTB to CRT
+	SBX# 1		;1 Position before the placed car to create a larger car
+	OUTB+ CRT_VBUF	;Print to Screen
+L_BACK:	POPX		;Get back count of cars placed
+	AOC NUM_CARS	;Check if num_cars have been placed
+	JEQ START_CARS_RTN	;If correct number of cars have been placed retuturn
+	JMP L_ADD_CAR	;If not done place next car
+	
+	
+
+
+R_ADD_CAR:	PSHX		;Save counter of cars placed
+	LDA ! start_lane	;ACC = lane
+	LDX ! start_lane	;XR = lane
+	MUL# SCREEN_WIDTH_CONSTANT	;Multiply by width to get the index for the first elament in that lane
+	STA+ LANE_ARRAY	;Place starting index into lane array to help with move
+	PSHA		;Save starting index to add random value to later	
+	PSH# MAX_POS	;Get horizontal index between 0-screenwdith-1
+	JSR RANDOM	;Call random - result in ACC
+	ADS# 1		;Increment SP
+	STA RANDOM_POS	;Store horizontal index
+	POPA		;Get back the starting index of this lane
+	ADA RANDOM_POS	;Add randomized horizontal index to get randmomized location in lane
+	TAX		;Transfer index to XR
+	LDA# RC_CHAR	;Load right car character to OUTB to CRT
+	OUTB+ CRT_VBUF	;Place car character in ramdomized position in lane
+	PSH# DOUBLE_CAR_MODIFIER	;Randomize chance of getting a double car
+	JSR RANDOM	;Call random - result in ACC
+	ADS# 1		;Increment SP
+	CMA# 1		;If 1 then add another arrow to currently placed car
+	JEQ R_DOUBLE	;If 1 then add another arrow to currently placed car
+	POPX		;Get number of cars placed back into XR
+	AOC NUM_CARS	;Increment and check if all cars have been placed
+	JEQ START_CARS_RTN	;If all cars have been placed return
+	JMP R_ADD_CAR	;If all cars not placed yet then place next car
+R_DOUBLE:	LDA RANDOM_POS	;Load horizontal position into ACC to check if you can increase its length by adding char behind it
+	CMA# 0		;If at starting horizontal index another char can't be added behind it
+	JEQ R_BACK	;Place next car if can't convert to a double car
+	SBX# 1		;Otherwise place char 1 position before last placed char
+	LDA# RC_CHAR	;Load right car char to place
+	OUTB+ CRT_VBUF	;Place another char right behind placed char to represent a larger car
+R_BACK:	POPX		;Get back number of cars placed
+	AOC NUM_CARS	;Increment and check if all cars have been placed
+	JEQ START_CARS_RTN	;If all cars have been placed then return
+	JMP R_ADD_CAR	;If not then then place next car
+
+START_CARS_RTN:	
+	POPA	;Return caller registers
+	POPX	;Return caller registers
+	PSHA	;Call random again with ACC in order to add more randomness to the lane positions(pseudo random with only 2 possible values ends up with very predictable pattern)
+	JSR RANDOM	;Call random - result in ACC but not used except to rerandomize later
+	ADS# 1		;Increment SP
+	FIN# 0		;End function and return
+	RTN		;End function and return
+
+NUM_CARS:	.word 0	;Number of cars to place in the lane - randomly determined
+RANDOM_POS:	.word 0	;Randomly determined horizontal pos=ition in the lane
+
+
+
+
+
+
+
+
+MOVE_CARS:	BGN# 0		;Start functoin
+	PSHA	;Save caller registers
+	PSHX	;Save caller registers
+	LDX# LANE_9_CONSTANT-1	;XR will represent lanes, this starts it at the first lane(CRT wise) once AOC has occured
+NEXT_LANE:	AOC# LANE_1_CONSTANT	;Move on to next lane until all lanes moved
+	JGT MOVE_RTN	;Once lane 1 has been moved then return
+	LDA+  LANE_ARRAY	;Load from lane array which contains starting index of all lanes with cars placed in them
+	CMA# 0		;If lane without cars then no starting position stored so value will be default 0
+	JEQ NEXT_LANE	;If lane doesn't have cars move to the next one
+	PSHA		;Save starting index before check if this lane should move this scyle
+	LDA+ LANE_SPEED_ARRAY	;Load ACC with this lanes speed modifier
+	STA LANE_SPEED_MOD	;Save lane speed modifier to mod from cycle count
+	LDA CYCLE_COUNT	;Speed modifier determines after how many cycles this lane should move
+	MOD LANE_SPEED_MOD	;Speed modifier determines after how many cycles this lanes cars should move
+	CMA# 0		;If MOD = 0 than this lane should move, otherwise wait for next cycle
+	POPA
+	JNE NEXT_LANE	;If not 0 than this lane shouldn't move check the next lane
+	STA LANE_START	;Store ACC into lanes starting index
+	PSHX		;Save XR which is lane currently being moved
+	TAX		;Transfer starting position of lane into XR
+	ADA# MAX_POS	;Add 37 to starting position to get final index of lane
+	STA LANE_END	;Store index of final position in lane
+NEXT_CHAR:	INB+ CRT_VBUF	;Get character from lane to determine if this lane is a right lane or left lane
+	CMA# LC_CHAR	;If left car character found then it is a left car array and should be moved accordingly
+	JEQ L_MOVE	;Movement branch for a left car array
+	CMA# RC_CHAR	;If right car character found then it is a right car array and should be moved accordingly
+	JEQ R_MOVE	;Movement branch for a right  car array
+	ADX# 1		;Increment horizontal index to read in next char if position was empty
+	JMP NEXT_CHAR	;Still don't know array type so read next character
+
+
+
+
+;READ LEFT CARS LEFT TO RIGHT SO THAT YOU DON"T READ THE CAR YOU JUST PLACED AS NEEDING TO BE MOVED
+NEXT_L:	INB+ CRT_VBUF	;Read in next character to see if its a left car char that needs to be moved
+	CMA# LC_CHAR	;Check if left car character that needs to be moved
+	JEQ L_MOVE	;If left car character then move it
+	AOC LANE_END	;Check if this character is the last in the lane
+	JLE NEXT_L	;If greater than last in array all cars have been moved
+	POPX		;Get back you lane counter
+	JMP NEXT_LANE	;Go to the next lane
+	
+L_MOVE:	LDA# ' '	;Load with blank space to remove from current position
+	OUTB+ CRT_VBUF	;OUTB blank to remove current poisition of car character
+	CMX LANE_START	;Check if this car is at the start of the lane which is moved differently
+	LDA# LC_CHAR	;Load left car character to place at new position
+	JNE MOVE_LC	;If this car was not at the starting poitioin than it can just be moved 1 spot to the left
+L_EDGE:	PSHX		;Save position where you were reading from the lane
+	LDX LANE_END	;This car was at the start of the lane so it should be moved to the end of the lane
+	JSR CHECK_HIT2	;Check if player got hit
+	CMA# 1
+	JEQ SKIP1
+	LDA# RC_CHAR
+	OUTB+ CRT_VBUF	;Place left car character at end of lane
+SKIP1:	POPX		;Return to where characters were being read from the lane
+	ADX# 1		;Move on to the next position
+	JMP NEXT_L	;Read in next character to see if its car that needs to be moved or blank
+;NOTE do not need to check if all cars have been moved because this car is always read first
+
+MOVE_LC:	SBX# 1		;Since this car is not at the start just move it one back
+	JSR CHECK_HIT2	;Check if player got hit
+	CMA# 1
+	JEQ SKIP2
+	LDA# RC_CHAR
+	OUTB+ CRT_VBUF	;Place car character at its new position
+SKIP2:	ADX# 1		;Return XR to where it had been previously reading values
+	AOC LANE_END	;Increment XR to next value and see if next will be last
+	JLE NEXT_L	;If poition is still in this lane than continue reading in values
+	POPX		;Return which lane you were movinh
+	JMP NEXT_LANE	;Go to next lane
+
+
+
+
+
+;NOTE RIGHT CAR CHARACTERS NEED TO BE READ LEFT TO RIGHT OTHERWISE YOU WILL KEEP READING THE CAR YOU JUST MOVED
+R_MOVE:	LDX LANE_END	;Start reading in values from the right to avoid above problem
+NEXT_R:	INB+ CRT_VBUF	;Read in value to see if it is a car that needs to be moved
+	CMA# RC_CHAR	;If it is a right car character than move it
+	JEQ RC_FOUND	;Move the right car character
+	SBX# 1		;If not a car then check next position
+	CMX LANE_START	;Last position read in should be first index of the lane
+	JGE NEXT_R	;Last position read in should be first index in the lane
+	POPX		;Get back lane counter
+	JMP NEXT_LANE	;Go to next lane
+
+
+
+
+RC_FOUND:	LDA# ' '	;Replace current cars position with blank
+	OUTB+ CRT_VBUF	;Replace current position with blank
+	CMX LANE_END	;If car is at the rightmost part then it needs to be moved differently
+	LDA# RC_CHAR	;Load right car character to place in new position
+	JNE MOVE_RC	;If not at rightmost location then just move 1 to the right
+R_EDGE:	PSHX		;Save XR which is where in the lane you were reading in from
+	LDX LANE_START	;Rightmost car should be moved to the start of the lane
+	JSR CHECK_HIT2	;Check is player got hit
+	CMA# 1
+	JEQ SKIP3
+	LDA# RC_CHAR
+	OUTB+ CRT_VBUF	;Rightmost car should be moved to the start of the lane
+SKIP3:	POPX		;Return the position you were reading from
+	SBX# 1		;Decrement to read in next character
+	JMP NEXT_R	;Read in next character
+;NOTE no need to check if last car because rightmost value is first to be read in so there will be more
+MOVE_RC:	ADX# 1		;Will be placed 1 to the right
+	JSR CHECK_HIT2	;Check if player hit
+	CMA# 1
+	JEQ SKIP4
+	LDA# RC_CHAR
+	OUTB+ CRT_VBUF	;Place one position more right
+SKIP4:	SBX# 1		;Return to where car was found
+	SBX# 1		;Decrement to read in next character
+	CMX LANE_START	;Last value read in should be leftmost value
+	JGE NEXT_R	;Last value read in should be first position in lane
+	POPX		;Return which lane you were in
+	JMP NEXT_LANE	;Go to next lane
+	
+
+MOVE_RTN:	POPX	;Restore caller registers
+	POPA	;Restore caller registers
+	FIN# 0
+	
+LANE_START:	.word 0	;Index for start of current lane
+LANE_END:	.word 0	;index for end of current lane
+LANE_SPEED_MOD:	.word 0	;Current speed modifier of the lane
+
+SET_SPEEDS:	.equ lvl_modifier, 2
+	BGN# 0		;Set FP for relative referencing of parameters
+	PSHA		;Save caller registers
+	PSHX		;Save caller registers
+	LDX# LANE_9_CONSTANT-1	;Start 1 before first lane(CRT index wise) so that start at first lane once incremented
+NXT_LANE:	AOC# LANE_1_CONSTANT	;Move on to next lane until all lanes moved
+	JGT SPEED_RTN	;Once lane 1 has been moved then return
+	LDA+  LANE_ARRAY	;Load from lane array which contains starting index of all lanes with cars placed in them
+	CMA# 0		;If lane without cars then no starting position stored so value will be default 0
+	JEQ NXT_LANE	;If lane doesn't have cars move to the next one
+	PSH# SPEED_VAR	;Randomize multiplier on base speeds
+	JSR RANDOM	;Call random - result in ACC
+	ADS# 1		;Increment SP
+	ADA# 1		;Add 1 in case randomized to 0 so cars still move
+	MUL SPEED_MOD	;Multiply random value with base speed(reduced every level)
+	STA+ LANE_SPEED_ARRAY	;Store speed for that lane for this level
+	JMP NXT_LANE	;Set Speed for next lane
+SPEED_RTN:	POPX		;Restore caller registers
+	POPA		;Restore caller registers
+	PSHA		;Random call to rng with ACC to not get stuck in pseudo random speed loops
+	JSR RANDOM
+	ADS# 1		
+	FIN# 0
+	RTN
+	
+	
+;TODO USE PLAYER CHARACTER
+;NOTE CALLED BEFORE OUTB+ OF CAR SO XR ALREADY HAS POSITION WHERE CAR IS MOVING
+CHECK_HIT2:	BGN# 0		;Start function
+	INB+	CRT_VBUF	;Read in character from where car is going to be placed
+	CMA# PLAYER_CHAR_CONSTANT	;If car going to where player char is then they got hit
+	JEQ	HIT_PLAYER
+	CMA# MINE_CHAR
+	JNE NOT_HIT
+	JSR C_HIT_MINE
+	JMP NOT_HIT
+HIT_PLAYER:	JSR GOT_HIT	;Call got hit
+NOT_HIT:	FIN# 0		;Not hit then return
+	RTN
+
+
+C_HIT_MINE:	BGN# 0
+	PSHX
+	LDA# ExPLOSION_CHAR1
+	OUTB+ CRT_VBUF
+	SBX# SCREEN_WIDTH_CONSTANT
+	ADX# 1
+	STX END_OF_ROW
+	SBX# 2
+	LDA# 1
+	PSHA
+CHECK_ROW2:	INB+ CRT_VBUF
+	CMA# PLAYER_CHAR_CONSTANT
+	JNE NO_PLAYER
+	JSR EXPLODE_PLAYER
+NO_PLAYER:	CMA# LC_CHAR
+	JNE NO_LC_EXP
+	JSR EXPLODE_CAR
+	JEQ CAR_EXPLODED
+NO_LC_EXP:	CMA# RC_CHAR
+	JNE NO_CARS_EXP
+	JSR EXPLODE_CAR
+	JEQ CAR_EXPLODED
+NO_CARS_EXP:	JSR EXPLODE_EMPTY
+CAR_EXPLODED:	AOC END_OF_ROW
+	JLE 	CHECK_ROW2
+	POPA
+	ADA# 1
+	CMA# 3
+	JGT C_HIT_MINE_RTN
+	ADX# SCREEN_WIDTH_CONSTANT
+	SBX# 1
+	STX END_OF_ROW
+	SBX# 2
+	PSHA
+	JMP CHECK_ROW2
+C_HIT_MINE_RTN:	POPX
+	FIN# 0
+	LDA# 1
+	RTN
+
+END_OF_ROW:	.word 0
+EXPLODE_PLAYER:	PSHA
+	LDA# EXPLOSION_CHAR1
+	OUTB+ CRT_VBUF
+	PSH EMPTY_EXPLOSION_TIME
+	JSR WAIT
+	ADS# 1
+	LDA# PLAYER_EXPLODED_CHAR
+	OUTB+ CRT_VBUF
+	PSH PLAYER_EXPLOSION_TIME
+	JSR WAIT
+	ADS# 1
+	LDA# ' '
+	OUTB+ CRT_VBUF
+	JSR GOT_HIT
+	POPA
+	RTN
+
+EXPLODE_CAR: BGN# 0
+	PSHA
+	LDA# EXPLOSION_CHAR1
+	OUTB+ CRT_VBUF
+	PSH EMPTY_EXPLOSION_TIME
+	JSR WAIT
+	ADS# 1
+	LDA# EXPLOSION_CHAR2
+	OUTB+ CRT_VBUF
+	PSH CAR_EXPLOSION_TIME
+	JSR WAIT
+	ADS# 1
+	LDA# ' '
+	OUTB+ CRT_VBUF
+	POPA
+	FIN# 0
+	RTN
+
+EXPLODE_EMPTY:	BGN# 0
+	PSHA
+	LDA# EXPLOSION_CHAR1
+	OUTB+ CRT_VBUF
+	LDA EMPTY_EXPLOSION_TIME
+	MUL# 2
+	PSHA
+	JSR WAIT
+	ADS# 1
+	LDA# ' '
+	OUTB+ CRT_VBUF
+	POPA
+	FIN# 0
+	RTN
+	
+
+GOT_HIT:	BGN# 0
+	DEC		LIVES
+	; Print bottom row
+	PSH	LEVEL
+	PSH	LIVES
+	JSR	UPDATE_BOTTOM
+	ADS#	2
+	;If player made it to the mddle then they get reset at the middle
+	LDA PLAYER_ROW
+	CMA# CENTER_DIVIDE_CONSTANT
+	LDA# PLAYER_START_ROW_CONSTANT
+	JGT RESET_BOTTOM
+	LDA# CENTER_DIVIDE_CONSTANT
+	;Reset and return function	
+RESET_BOTTOM:	PSH#	PLAYER_START_COL_CONSTANT
+	PSHA
+	JSR	SET_PL_POS
+	ADS#	2
+	FIN# 0
+	RTN
+	
+
+
+NEXT_LEVEL:	BGN# 0
+	; Add remaining time to the score
+	PSHA
+	INB	TIMER_COUNTER_REG
+	; ACC = remaining time left
+	ADA	SCORE
+	STA	SCORE
+	POPA
+	; logic when going to next level
+	JSR	INC_LEVEL ; add level
+	PSH#	PLAYER_START_COL_CONSTANT
+	PSH#	PLAYER_START_ROW_CONSTANT
+	JSR	SET_PL_POS ; Reset player pos
+	ADS#	2
+	PSH#	LANE_1_CONSTANT ; Turn off the lanes
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_2_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_3_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_4_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_5_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_6_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_7_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_8_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_9_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH# CENTER_DIVIDE_CONSTANT
+	JSR TURN_OFF_ROW
+	ADS# 1
+	FIN# 0
+	RTN
+
+
+INC_LEVEL:	CIE
+	LDA	$E0 ; reset timer
+	OUTB	TIMER_CONTROL_REG
+	BGN#	0
+	PSHA
+	LDA LEVEL ; only increment level if its below max level
+	CMA# MAX_LEVEL_CONSTANT
+	JGE MAX_LEVEL
+	INC LEVEL
+	LDA SPEED_MOD ; change speed based on level
+	SBA# DELTA_SPEED
+	STA SPEED_MOD
+	; Print bottom row
+MAX_LEVEL:	PSH	LEVEL 
+	PSH	LIVES
+	JSR	UPDATE_BOTTOM
+	ADS#	2
+	POPA
+	JSR TURN_OFF_CARS
+	JSR START_CARS
+	JSR SET_SPEEDS
+	LDA# 5
+	STA MINES
+	LDA#	$D0
+	OUTB	TIMER_CONTROL_REG
+	FIN#	0
+	RTN
+
+DEC_LEVEL:	CIE
+	LDA	$E0
+	OUTB	TIMER_CONTROL_REG ; reset timer
+	BGN#	0
+	PSHA
+	LDA LEVEL ; only decrement the level if its above min level
+	CMA# 0
+	JLE LVL_0
+	DEC LEVEL
+	LDA SPEED_MOD ; change speed based on level
+	ADA# DELTA_SPEED
+	STA SPEED_MOD
+	; Print bottom row
+LVL_0:	PSH	LEVEL
+	PSH	LIVES
+	JSR	UPDATE_BOTTOM
+	ADS#	2
+	POPA
+	JSR TURN_OFF_CARS
+	JSR START_CARS
+	JSR SET_SPEEDS
+	LDA# 5
+	STA MINES
+	LDA#	$D0
+	OUTB	TIMER_CONTROL_REG
+	FIN#	0
+	RTN
+
+; turn off play area rows function
+TURN_OFF_PLAY_AREA_ROWS:	PSH# CENTER_DIVIDE_CONSTANT ; turn off play area rows
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	STARTING_ROW_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	FINISH_ROW_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_1_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_2_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_3_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_4_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_5_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_6_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_7_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_8_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_9_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	RTN
+
+; turn off all rows function
+TURN_OFF_SCREEN_FUNCTION: JSR TURN_OFF_PLAY_AREA_ROWS
+	PSH#	BOTTOM_ROW_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	TOP_ROW_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	RTN
+
+; turn off all rows atari extension
+TURN_OFF_SCREEN: CIE ; no timer interrupts needed during this time
+	LDA#	STARTING_LIVES_CONSTANT ; reset lives
+	STA	LIVES
+	LDA#	STARTING_SCORE_CONSTANT ; reset score
+	STA	SCORE
+	LDA#	STARTING_LEVEL_CONSTANT ; reset level
+	STA	LEVEL
+	JSR	TURN_OFF_SCREEN_FUNCTION ; turn off the whole screen
+TURN_OFF_SCREEN_POLL: INB KBD_CNTR
+	JGE	TURN_OFF_SCREEN_POLL	
+	INB	KBD_DATA
+	CMA#	's'
+	JEQ	START_LEVEL
+	CMA#	'r'
+	JEQ	RESET_GAME
+	CMA#	'h'
+	JEQ	DISPLAY_HIGH_SCORES
+	JMP	TURN_OFF_SCREEN_POLL
+
+
+TURN_OFF_CARS: PSH# LANE_1_CONSTANT ; turn off the lanes
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_2_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_3_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_4_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_5_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_6_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_7_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_8_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH#	LANE_9_CONSTANT
+	JSR	TURN_OFF_ROW
+	ADS#	1
+	PSH# CENTER_DIVIDE_CONSTANT
+	JSR TURN_OFF_ROW
+	ADS# 1
+	RTN
+RESET_GAME:	CIE ; dont get interrupted by the timer
+	; Get the initials if it is a new high score (beyond the min threshold)
+	JSR		GET_NEW_HIGH_SCORE
+	; Do the usual stuff
+	LDA#	STARTING_LIVES_CONSTANT ; reset lives
+	STA	LIVES
+	LDA#	STARTING_SCORE_CONSTANT ; reset score
+	STA	SCORE
+	LDA#	STARTING_LEVEL_CONSTANT ; reset level
+	STA	LEVEL
+	; Print bottom row
+	PSH	LEVEL
+	PSH	LIVES
+	JSR	UPDATE_BOTTOM ; Reset lives, levels, and scores and update it to the screen
+	ADS#	2
+	JSR		TURN_OFF_PLAY_AREA_ROWS ; Reset the play area
+	PSH#	PLAYER_START_COL_CONSTANT ; Reset player position
+	PSH#	PLAYER_START_ROW_CONSTANT
+	JSR	SET_PL_POS
+	ADS#	2
+	LDA# BASE_SPEED_MOD
+	STA SPEED_MOD
+	LDA# 5
+	STA MINES
+RESET_GAME_POLL: INB	KBD_CNTR ; Poll for next action after resetting the game
+	JGE	RESET_GAME_POLL
+	INB	KBD_DATA
+	CMA#	's'
+	JEQ	START_LEVEL
+	CMA#	'o'
+	JEQ	TURN_OFF_SCREEN
+	CMA#	'h'
+	JEQ	DISPLAY_HIGH_SCORES
+	CMA# 'z' ; let user change level in the reset game screen
+	JNE NOT_Z
+	JSR INC_LEVEL
+	JSR TURN_OFF_CARS ; make sure that the cars are not on when we havent even started
+NOT_Z:	CMA# 'a'
+	JNE RESET_GAME_POLL
+	JSR DEC_LEVEL
+	JSR TURN_OFF_CARS
+	JMP	RESET_GAME_POLL
+
+; PROCEDURE TURN_OFF_ROw(TURN_OFF_ROW_ROW:INTEGER)
+	.equ	TURN_OFF_ROW_ROW, 2
+TURN_OFF_ROW:	BGN#	0
+	PSHX
+	PSHA
+	LDX#	0
+TURN_OFF_ROW_LP: PSH#	' '
+	PSH  !	TURN_OFF_ROW_ROW
+	PSHX
+	JSR	PRINT_CHAR ; for each char in that row on the screen, change it to a blank character
+	ADS#	3
+	AOC#	SCREEN_WIDTH_CONSTANT
+	JLT	TURN_OFF_ROW_LP	
+	POPA
+	POPX
+	FIN#	0
+	RTN
+
+; High score variables
+; for each high score, first 24 bits = initials and second 24 bits = the actual score
+; each high score takes up a grand total of 48 bits
+	.equ	NUM_OF_HIGH_SCORES_CONSTANT, 3 ; due to hardcoded behavior, this value CANNOT be changed
+	.equ	HIGH_SCORES_ARRAY_LEN_CONSTANT, NUM_OF_HIGH_SCORES_CONSTANT * 2
+HIGH_SCORES:		.word 'ab '
+MAX_HIGH_SCORE:	.word 3
+			.word 'cd '
+			.word 2
+			.word 'ef '
+MIN_HIGH_SCORE:	.word 1
+HIGH_SCORES_STR:	.char 'High Scores:', HIGH_SCORES_STR_LEN_CONSTANT
+
+; Read tape
+; Inspired from figure 8.23
+; When reading the tape, we assume it is sorted from greatest to least
+READ_TAPE:	PSHA
+	INB	 TAPE_STATUS_REG
+	JGE TAPE_DONE ; tape is not ready yet
+	LDA# HIGH_SCORES ; store the address to the tape drive
+	OUTW TAPE_ADDRESS
+	LDA# HIGH_SCORES_ARRAY_LEN_CONSTANT ; store the length in tape drive
+	OUTB TAPE_LEN
+	LDA# TAPE_READ_BITS ; initiate read
+	OUTB TAPE_CONTROL_REG
+	JSR	TAPE_POLL ; poll tape
+	POPA
+	RTN
+
+; Write to tape
+; Always write to tape whenever high scores change
+WRITE_TAPE:	PSHA
+	INB	 TAPE_STATUS_REG
+	JGE TAPE_DONE ; tape is not ready yet
+	LDA# HIGH_SCORES ; store the address to the tape drive
+	OUTW TAPE_ADDRESS
+	LDA# HIGH_SCORES_ARRAY_LEN_CONSTANT ; store the length in tape drive
+	OUTB TAPE_LEN
+	LDA# TAPE_WRITE_BITS ; initiate write
+	OUTB TAPE_CONTROL_REG
+	JSR	TAPE_POLL ; poll tape
+	POPA
+	RTN
+
+; POLL to see when the tape has finished it's given task
+TAPE_POLL:	INB TAPE_STATUS_REG ; wait for operation to complete
+	JLT	TAPE_DONE
+	AND#	TAPE_MOUNTED_BIT ; check to see that tape is still mounted
+	JEQ	TAPE_DONE ; if not, an err has occured
+	JMP	TAPE_POLL
+TAPE_DONE: RTN
+
+; Display high scores
+; for each high score, first 24 bits = initials and last 24 bits = the actual score
+DISPLAY_HIGH_SCORES: JSR TURN_OFF_SCREEN_FUNCTION
+	LDX#	0 ; start at index 0 of the HIGH_SCORES array we will print
+	; reset cursor to 1, 1
+	LDA#	1
+	OUTB	SCREEN_CURSOR_X
+	OUTB	SCREEN_CURSOR_Y
+	; print "high scores"
+	PSH#	HIGH_SCORES_STR_LEN_CONSTANT
+	PSH#	HIGH_SCORES_STR
+	JSR		$E05
+	ADS#	2
+	; print next line
+	JSR		$E06
+	; print the initials
+PRINT_HIGH_SCORES: PSH#	2 ; length
+	TXA
+	ADA#	HIGH_SCORES
+	PSHA	; string of initials
+	JSR		$E05
+	ADS#	2
+	; print seperator
+	PSH#	SEPERATOR_STR_LEN_CONSTANT
+	PSH#	SEPERATOR_STR
+	JSR		$E05
+	ADS#	2
+	; print the score
+	ADX#	1 ; the score is adjacent to the right of the initials
+	LDA+	HIGH_SCORES
+	JSR		$E07
+	; print next line
+	JSR		$E06
+	; continue the loop if we have to
+	AOC#	NUM_OF_HIGH_SCORES_CONSTANT * 2
+	JLT		PRINT_HIGH_SCORES
+DISPLAY_HIGH_SCORES_POLL: INB KBD_CNTR ; Poll for next action after resetting the game
+	JGE	DISPLAY_HIGH_SCORES_POLL
+	INB	KBD_DATA
+	CMA#	'r'
+	JEQ	RESET_GAME
+	CMA#	's'
+	JEQ	START_LEVEL
+	CMA#	'o'
+	JEQ	TURN_OFF_SCREEN
+	JMP	DISPLAY_HIGH_SCORES_POLL
+
+	.equ	NEW_HIGH_SCORE_SCORE, 3
+	.equ	NEW_HIGH_SCORE_INITIALS, 2 ; string NOT var, pass by value
+UPDATE_HIGH_SCORE: BGN#	0
+	PSHA
+	PSHX
+	; check if it is greater than the first high score
+	LDX#	1
+	LDA+	HIGH_SCORES
+	CMA  !	NEW_HIGH_SCORE_SCORE
+	JLT		UPDATE_HIGH_SCORE_FIRST
+	; check if it is greater than the second high score
+	LDX#	3
+	LDA+	HIGH_SCORES
+	CMA  !	NEW_HIGH_SCORE_SCORE
+	JLT		UPDATE_HIGH_SCORE_SECOND
+	; we will update the third high score
+	JMP		UPDATE_HIGH_SCORE_THIRD
+UPDATE_HIGH_SCORE_FIRST: PSH+ HIGH_SCORES ; score
+	SBX#	1
+	PSH+ HIGH_SCORES ; initials
+	JSR	UPDATE_HIGH_SCORE ; recursive call so first gets sent to second
+	ADS#	2
+	; store the first high score
+	LDX#	1
+	LDA  !	NEW_HIGH_SCORE_SCORE
+	STA+	HIGH_SCORES
+	SBX#	1
+	LDA  !	NEW_HIGH_SCORE_INITIALS
+	STA+	HIGH_SCORES
+	JMP		UPDATE_HIGH_SCORE_DONE
+UPDATE_HIGH_SCORE_SECOND: PSH+ HIGH_SCORES ; score
+	SBX#	1
+	PSH+ HIGH_SCORES ; initials
+	JSR	UPDATE_HIGH_SCORE ; recursive call so second gets sent to third
+	ADS#	2
+	; store the second high score
+	LDX#	3
+	LDA  !	NEW_HIGH_SCORE_SCORE
+	STA+	HIGH_SCORES
+	SBX#	1
+	LDA  !	NEW_HIGH_SCORE_INITIALS
+	STA+	HIGH_SCORES
+	JMP		UPDATE_HIGH_SCORE_DONE
+	; store the third high score
+UPDATE_HIGH_SCORE_THIRD:	LDX# 5
+	LDA  !	NEW_HIGH_SCORE_SCORE
+	STA+	HIGH_SCORES
+	SBX#	1
+	LDA  !	NEW_HIGH_SCORE_INITIALS
+	STA+	HIGH_SCORES
+	JMP		UPDATE_HIGH_SCORE_DONE
+UPDATE_HIGH_SCORE_DONE:	POPX
+	POPA
+	FIN#	0
+	RTN
+
+; Get the new high score if it is beyond the threshold
+NEW_HIGH_SCORE_STR:	.char 'New high score! Enter your initials', NEW_HIGH_SCORE_STR_LEN_CONSTANT
+GET_NEW_HIGH_SCORE_INITIALS:	.word 0
+GET_NEW_HIGH_SCORE_INITIALS_LEN: .word 0
+	.equ	GET_NEW_HIGH_SCORE_INITIALS_MAX_LEN_CONSTANT, 2
+GET_NEW_HIGH_SCORE: PSHA
+	LDA		SCORE
+	CMA		MIN_HIGH_SCORE
+	JLE		GET_NEW_HIGH_SCORE_DONE
+	; The score is higher than the min high score, get the initials
+	; reset screen
+	JSR		TURN_OFF_SCREEN_FUNCTION
+	; reset cursor to 1, 1
+	LDA#	1
+	OUTB	SCREEN_CURSOR_X
+	OUTB	SCREEN_CURSOR_Y
+	; Print prompt
+	PSH#	NEW_HIGH_SCORE_STR_LEN_CONSTANT
+	PSH#	NEW_HIGH_SCORE_STR
+	JSR		$E05
+	ADS#	2
+	; Prompt user to enter initials
+	PSH#	GET_NEW_HIGH_SCORE_INITIALS_MAX_LEN_CONSTANT ; max get ch
+	PSH#	GET_NEW_HIGH_SCORE_INITIALS ; var get str
+	PSH#	GET_NEW_HIGH_SCORE_INITIALS_LEN ; var act get ch
+	JSR		$E04
+	ADS#	3
+	; Update the high score
+	PSH		SCORE
+	PSH		GET_NEW_HIGH_SCORE_INITIALS
+	JSR		UPDATE_HIGH_SCORE
+	ADS#	2
+GET_NEW_HIGH_SCORE_DONE:	POPA
+	RTN
+
+; int random(int max) leaves result in accumulator!
+	.equ	randomMax, 2
+	
+random:	bgn#	0
+	lda	SEED
+	mul#	2779
+	ada#	1997
+	mod#	2048
+	sta	SEED
+	inc !	randomMax
+	mod !	randomMax
+	fin#	0	
+	rtn
+
+
+LANE_ARRAY:	.BLKW 12, 0	;Array of lane starting indexes on the CRT
+SEED:	.word 686	;Randomization SEED
+
+	.END
